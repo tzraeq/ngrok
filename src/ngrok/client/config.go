@@ -12,6 +12,7 @@ import (
 	"path"
 	"regexp"
 	"strconv"
+	"path/filepath"
 	"strings"
 )
 
@@ -199,7 +200,7 @@ func LoadConfiguration(opts *Options) (config *Configuration, err error) {
 }
 
 func defaultPath() string {
-	user, err := user.Current()
+	/*user, err := user.Current()
 
 	// user.Current() does not work on linux when cross compiling because
 	// it requires CGO; use os.Getenv("HOME") hack until we compile natively
@@ -208,9 +209,11 @@ func defaultPath() string {
 		log.Warn("Failed to get user's home directory: %s. Using $HOME: %s", err.Error(), homeDir)
 	} else {
 		homeDir = user.HomeDir
-	}
-
-	return path.Join(homeDir, ".ngrok")
+	}*/
+	
+	dir := filepath.Dir(os.Args[0])
+	
+	return path.Join(dir, ".ngrok")
 }
 
 func normalizeAddress(addr string, propName string) (string, error) {
