@@ -160,6 +160,27 @@ func (r *TunnelRegistry) Get(url string) *Tunnel {
 	return r.tunnels[url]
 }
 
+func (r *TunnelRegistry) GetVHost(protocol string, servingPort int) (vhost string){
+		vhost := os.Getenv("VHOST")
+	if vhost == "" {
+		vhost = fmt.Sprintf("%s:%d", opts.domain, servingPort)
+	}
+
+	// Canonicalize virtual host by removing default port (e.g. :80 on HTTP)
+	defaultPort, ok := defaultPortMap[protocol]
+	if !ok {
+		return fmt.Errorf("Couldn't find default port for protocol %s", protocol)
+	}
+
+	defaultPortSuffix := fmt.Sprintf(":%d", defaultPort)
+	if strings.HasSuffix(vhost, defaultPortSuffix) {
+		vhost = vhost[0 : len(vhost)-len(defaultPortSuffix)]
+	}
+
+	// Canonicalize by always using lower-case
+	vhost = strings.ToLower(vhost)
+}
+
 // ControlRegistry maps a client ID to Control structures
 type ControlRegistry struct {
 	controls map[string]*Control
