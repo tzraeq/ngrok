@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
-	"os"
 )
 
 var defaultPortMap = map[string]int{

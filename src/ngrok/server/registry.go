@@ -163,7 +163,7 @@ func (r *TunnelRegistry) Get(url string) *Tunnel {
 }
 
 func (r *TunnelRegistry) GetVHost(protocol string, servingPort int) (vhost string, err error){
-	vhost := os.Getenv("VHOST")
+	vhost = os.Getenv("VHOST")
 	if vhost == "" {
 		vhost = fmt.Sprintf("%s:%d", opts.domain, servingPort)
 	}
