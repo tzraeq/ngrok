@@ -9,6 +9,7 @@ import (
 	"ngrok/log"
 	"strings"
 	"time"
+	"strconv"
 )
 
 const (
@@ -78,8 +79,18 @@ func httpHandler(c conn.Conn, proto string) {
 
 	// read out the Host header and auth from the request
 	host := strings.ToLower(vhostConn.Host())
+	servingPort := "80"
+	hostToken := strings.Split(host,":")
+	if len(hostToken) > 1 {
+		servingPort = hostToken[1]
+	}
 	auth := vhostConn.Request.Header.Get("Authorization")
-
+	path := vhostConn.Request.URL.Path
+	subdomain := ""
+	if path != "/" {
+		tokens := strings.Split(path,"/")
+		subdomain = tokens[1]
+	}
 	// done reading mux data, free up the request memory
 	vhostConn.Free()
 
@@ -90,11 +101,16 @@ func httpHandler(c conn.Conn, proto string) {
 	c.Debug("Found hostname %s in request", host)
 	tunnel := tunnelRegistry.Get(fmt.Sprintf("%s://%s", proto, host))
 	if tunnel == nil {
-		c.Info("No tunnel found for hostname %s", host)
-		c.Write([]byte(fmt.Sprintf(NotFound, len(host)+18, host)))
-		return
+		port, _ := strconv.Atoi(servingPort)
+		ovhost, _ := tunnelRegistry.GetVHost(proto,port)
+		if ovhost == host{
+			tunnel = tunnelRegistry.Get(fmt.Sprintf("%s://%s/%s", proto, host, subdomain))
+		} else {
+			c.Info("No tunnel found for hostname %s", host)
+			c.Write([]byte(fmt.Sprintf(NotFound, len(host)+18, host)))
+			return
+		}
 	}
-
 	// If the client specified http auth and it doesn't match this request's auth
 	// then fail the request with 401 Not Authorized and request the client reissue the
 	// request with basic authdeny the request
@@ -103,7 +119,7 @@ func httpHandler(c conn.Conn, proto string) {
 		c.Write([]byte(NotAuthorized))
 		return
 	}
-
+	
 	// dead connections will now be handled by tunnel heartbeating and the client
 	c.SetDeadline(time.Time{})
 

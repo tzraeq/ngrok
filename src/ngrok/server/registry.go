@@ -8,6 +8,8 @@ import (
 	"ngrok/log"
 	"sync"
 	"time"
+	"os"
+	"strings"
 )
 
 const (
@@ -160,8 +162,8 @@ func (r *TunnelRegistry) Get(url string) *Tunnel {
 	return r.tunnels[url]
 }
 
-func (r *TunnelRegistry) GetVHost(protocol string, servingPort int) (vhost string){
-		vhost := os.Getenv("VHOST")
+func (r *TunnelRegistry) GetVHost(protocol string, servingPort int) (vhost string,err error){
+	vhost = os.Getenv("VHOST")
 	if vhost == "" {
 		vhost = fmt.Sprintf("%s:%d", opts.domain, servingPort)
 	}
@@ -169,7 +171,7 @@ func (r *TunnelRegistry) GetVHost(protocol string, servingPort int) (vhost strin
 	// Canonicalize virtual host by removing default port (e.g. :80 on HTTP)
 	defaultPort, ok := defaultPortMap[protocol]
 	if !ok {
-		return fmt.Errorf("Couldn't find default port for protocol %s", protocol)
+		return vhost,fmt.Errorf("Couldn't find default port for protocol %s", protocol)
 	}
 
 	defaultPortSuffix := fmt.Sprintf(":%d", defaultPort)
@@ -179,6 +181,8 @@ func (r *TunnelRegistry) GetVHost(protocol string, servingPort int) (vhost strin
 
 	// Canonicalize by always using lower-case
 	vhost = strings.ToLower(vhost)
+
+	return vhost,nil
 }
 
 // ControlRegistry maps a client ID to Control structures
