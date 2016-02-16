@@ -4,7 +4,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	vhost "github.com/inconshreveable/go-vhost"
-	//"net"
+	"net"
 	"ngrok/conn"
 	"ngrok/log"
 	"strings"
@@ -44,7 +44,7 @@ func startHttpListener(addr string, tlsCfg *tls.Config) (listener *conn.Listener
 	if tlsCfg != nil {
 		proto = "https"
 	}
-
+	
 	log.Info("Listening for public %s connections on %v", proto, listener.Addr.String())
 	go func() {
 		for conn := range listener.Conns {
@@ -67,7 +67,9 @@ func httpHandler(c conn.Conn, proto string) {
 
 	// Make sure we detect dead connections while we decide how to multiplex
 	c.SetDeadline(time.Now().Add(connReadTimeout))
-
+	
+	_, port, _ := net.SplitHostPort(c.LocalAddr().String())
+	
 	// multiplex by extracting the Host header, the vhost library
 	vhostConn, err := vhost.HTTP(c)
 	if err != nil {
@@ -79,6 +81,7 @@ func httpHandler(c conn.Conn, proto string) {
 	// read out the Host header and auth from the request
 	host := strings.ToLower(vhostConn.Host())
 	auth := vhostConn.Request.Header.Get("Authorization")
+	hostname, _, _ := net.SplitHostPort(host)	
 
 	// done reading mux data, free up the request memory
 	vhostConn.Free()
@@ -88,7 +91,7 @@ func httpHandler(c conn.Conn, proto string) {
 
 	// multiplex to find the right backend host
 	c.Debug("Found hostname %s in request", host)
-	tunnel := tunnelRegistry.Get(fmt.Sprintf("%s://%s", proto, host))
+	tunnel := tunnelRegistry.Get(fmt.Sprintf("%s://%s:%s", proto, hostname, port))
 	if tunnel == nil {
 		c.Info("No tunnel found for hostname %s", host)
 		c.Write([]byte(fmt.Sprintf(NotFound, len(host)+18, host)))
