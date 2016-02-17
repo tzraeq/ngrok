@@ -9,6 +9,7 @@ import (
 	"ngrok/log"
 	"strings"
 	"time"
+	"regexp"
 )
 
 const (
@@ -88,7 +89,14 @@ func httpHandler(c conn.Conn, proto string) {
 		hostname = fmt.Sprintf("%s:%s",  hostname, port)
 	}
 	subdomain := vhostConn.Request.URL.Query().Get(SubDomainParamName)
-
+	
+	if subdomain == "" {
+		reg := regexp.MustCompile("Subdomain/(\\w+)")
+		matches := reg.FindStringSubmatch(vhostConn.Request.UserAgent())
+		if len(matches) > 0 {
+			subdomain = matches[1]
+		}
+	}
 	// done reading mux data, free up the request memory
 	vhostConn.Free()
 
