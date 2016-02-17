@@ -30,6 +30,7 @@ Content-Length: 12
 
 Bad Request
 `
+	SubDomainParamName = `_sd`
 )
 
 // Listens for new http(s) connections from the public internet
@@ -68,8 +69,6 @@ func httpHandler(c conn.Conn, proto string) {
 	// Make sure we detect dead connections while we decide how to multiplex
 	c.SetDeadline(time.Now().Add(connReadTimeout))
 	
-	_, port, _ := net.SplitHostPort(c.LocalAddr().String())
-	
 	// multiplex by extracting the Host header, the vhost library
 	vhostConn, err := vhost.HTTP(c)
 	if err != nil {
@@ -81,7 +80,14 @@ func httpHandler(c conn.Conn, proto string) {
 	// read out the Host header and auth from the request
 	host := strings.ToLower(vhostConn.Host())
 	auth := vhostConn.Request.Header.Get("Authorization")
-	hostname, _, _ := net.SplitHostPort(host)	
+	hostname, _, err := net.SplitHostPort(host)	
+	if err != nil {
+		hostname = host
+	} else {
+		_, port, _ := net.SplitHostPort(c.LocalAddr().String())
+		hostname = fmt.Sprintf("%s:%s",  hostname, port)
+	}
+	subdomain := vhostConn.Request.URL.Query().Get(SubDomainParamName)
 
 	// done reading mux data, free up the request memory
 	vhostConn.Free()
@@ -91,9 +97,17 @@ func httpHandler(c conn.Conn, proto string) {
 
 	// multiplex to find the right backend host
 	c.Debug("Found hostname %s in request", host)
-	tunnel := tunnelRegistry.Get(fmt.Sprintf("%s://%s:%s", proto, hostname, port))
+	
+	tunnelKey := ""
+	if subdomain == "" {
+		tunnelKey = fmt.Sprintf("%s://%s", proto, hostname)
+	} else {
+		tunnelKey = fmt.Sprintf("%s://%s.%s", proto, subdomain, hostname)
+	}
+	
+	tunnel := tunnelRegistry.Get(tunnelKey)
 	if tunnel == nil {
-		c.Info("No tunnel found for hostname %s", host)
+		c.Info("No tunnel found for hostname %s", tunnelKey)
 		c.Write([]byte(fmt.Sprintf(NotFound, len(host)+18, host)))
 		return
 	}
