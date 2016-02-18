@@ -3,13 +3,14 @@ package server
 import (
 	"crypto/tls"
 	"fmt"
-	vhost "github.com/inconshreveable/go-vhost"
 	"net"
 	"ngrok/conn"
 	"ngrok/log"
+	"regexp"
 	"strings"
 	"time"
-	"regexp"
+
+	vhost "github.com/inconshreveable/go-vhost"
 )
 
 const (
@@ -32,6 +33,13 @@ Content-Length: 12
 Bad Request
 `
 	SubDomainParamName = `_sd`
+	SubDomainCookiName = `Subdomain`
+	SetCooikeResponse  = `HTTP/1.0 200 OK
+Content-Length: %d
+Set-Cookie: %s=%s;
+
+Set %s to Cookie, please refresh and try again
+`
 )
 
 // Listens for new http(s) connections from the public internet
@@ -46,7 +54,7 @@ func startHttpListener(addr string, tlsCfg *tls.Config) (listener *conn.Listener
 	if tlsCfg != nil {
 		proto = "https"
 	}
-	
+
 	log.Info("Listening for public %s connections on %v", proto, listener.Addr.String())
 	go func() {
 		for conn := range listener.Conns {
@@ -69,7 +77,7 @@ func httpHandler(c conn.Conn, proto string) {
 
 	// Make sure we detect dead connections while we decide how to multiplex
 	c.SetDeadline(time.Now().Add(connReadTimeout))
-	
+
 	// multiplex by extracting the Host header, the vhost library
 	vhostConn, err := vhost.HTTP(c)
 	if err != nil {
@@ -81,22 +89,33 @@ func httpHandler(c conn.Conn, proto string) {
 	// read out the Host header and auth from the request
 	host := strings.ToLower(vhostConn.Host())
 	auth := vhostConn.Request.Header.Get("Authorization")
-	hostname, _, err := net.SplitHostPort(host)	
+	hostname, _, err := net.SplitHostPort(host)
 	if err != nil {
 		hostname = host
 	} else {
 		_, port, _ := net.SplitHostPort(c.LocalAddr().String())
-		hostname = fmt.Sprintf("%s:%s",  hostname, port)
+		hostname = fmt.Sprintf("%s:%s", hostname, port)
 	}
-	subdomain := vhostConn.Request.URL.Query().Get(SubDomainParamName)
-	
-	if subdomain == "" {
+	subdomain := vhostConn.Request.URL.Query().Get(SubDomainParamName) //url param
+
+	if subdomain == "" { //user-agent
 		reg := regexp.MustCompile("Subdomain/(\\w+)")
 		matches := reg.FindStringSubmatch(vhostConn.Request.UserAgent())
 		if len(matches) > 0 {
 			subdomain = matches[1]
 		}
 	}
+
+	cookieSubdomain := vhostConn.Request.Cookie(SubDomainCookiName)
+
+	if cookieSubdomain != "" {
+		if subdomain == "" {
+			subdomain = cookieSubdomain
+		} else if cookieSubdomain != subdomain {
+			cookieSubdomain = ""
+		}
+	}
+
 	// done reading mux data, free up the request memory
 	vhostConn.Free()
 
@@ -105,18 +124,22 @@ func httpHandler(c conn.Conn, proto string) {
 
 	// multiplex to find the right backend host
 	c.Debug("Found hostname %s in request", host)
-	
-	tunnelKey := ""
-	if subdomain == "" {
-		tunnelKey = fmt.Sprintf("%s://%s", proto, hostname)
-	} else {
-		tunnelKey = fmt.Sprintf("%s://%s.%s", proto, subdomain, hostname)
+
+	if cookieSubdomain != "" {
+		hostname = fmt.Sprintf("%s.%s", cookieSubdomain, hostname)
 	}
-	
+
+	tunnelKey := fmt.Sprintf("%s://%s", proto, hostname)
+
 	tunnel := tunnelRegistry.Get(tunnelKey)
 	if tunnel == nil {
-		c.Info("No tunnel found for hostname %s", tunnelKey)
-		c.Write([]byte(fmt.Sprintf(NotFound, len(host)+18, host)))
+		if subdomain != "" && cookieSubdomain == "" {
+			c.Info("Set %s to Cookie for hostname %s", cookieSubdomain, tunnelKey)
+			c.Write([]byte(fmt.Sprintf(SetCooikeResponse, len(subdomain)+48, SubDomainCookiName, subdomain, subdomain)))
+		} else {
+			c.Info("No tunnel found for hostname %s", tunnelKey)
+			c.Write([]byte(fmt.Sprintf(NotFound, len(host)+18, host)))
+		}
 		return
 	}
 
