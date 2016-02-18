@@ -106,13 +106,14 @@ func httpHandler(c conn.Conn, proto string) {
 		}
 	}
 
-	cookieSubdomain := vhostConn.Request.Cookie(SubDomainCookiName)
-
-	if cookieSubdomain != "" {
-		if subdomain == "" {
-			subdomain = cookieSubdomain
-		} else if cookieSubdomain != subdomain {
-			cookieSubdomain = ""
+	cookieSubdomain, err := vhostConn.Request.Cookie(SubDomainCookiName)
+	if err == nil {
+		if cookieSubdomain != "" {
+			if subdomain == "" {
+				subdomain = cookieSubdomain
+			} else if cookieSubdomain != subdomain {
+				cookieSubdomain = ""
+			}
 		}
 	}
 
