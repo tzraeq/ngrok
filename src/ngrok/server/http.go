@@ -33,12 +33,13 @@ Content-Length: 12
 Bad Request
 `
 	SubDomainParamName = `_sd`
-	SubDomainCookiName = `Subdomain`
+	SubDomainCookieName = `Subdomain`
 	SetCooikeResponse  = `HTTP/1.0 200 OK
 Content-Length: %d
 Set-Cookie: %s=%s;
 
-Set %s to Cookie, please refresh and try again
+  <!DOCTYPE html>
+Click <a href="%s://%s">%s</a> to refresh.
 `
 )
 
@@ -106,8 +107,10 @@ func httpHandler(c conn.Conn, proto string) {
 		}
 	}
 
-	cookieSubdomain, err := vhostConn.Request.Cookie(SubDomainCookiName)
+	subdomainCookie, err := vhostConn.Request.Cookie(SubDomainCookieName)
+	cookieSubdomain := ""
 	if err == nil {
+		cookieSubdomain = subdomainCookie.Value
 		if cookieSubdomain != "" {
 			if subdomain == "" {
 				subdomain = cookieSubdomain
@@ -135,8 +138,8 @@ func httpHandler(c conn.Conn, proto string) {
 	tunnel := tunnelRegistry.Get(tunnelKey)
 	if tunnel == nil {
 		if subdomain != "" && cookieSubdomain == "" {
-			c.Info("Set %s to Cookie for hostname %s", cookieSubdomain, tunnelKey)
-			c.Write([]byte(fmt.Sprintf(SetCooikeResponse, len(subdomain)+48, SubDomainCookiName, subdomain, subdomain)))
+			c.Info("Set %s to Cookie for hostname %s", subdomain, tunnelKey)
+			c.Write([]byte(fmt.Sprintf(SetCooikeResponse,len(proto)+len(hostname)+len(subdomain)+48, SubDomainCookieName, subdomain, proto, hostname, subdomain)))
 		} else {
 			c.Info("No tunnel found for hostname %s", tunnelKey)
 			c.Write([]byte(fmt.Sprintf(NotFound, len(host)+18, host)))
