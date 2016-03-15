@@ -32,8 +32,10 @@ Content-Length: 12
 
 Bad Request
 `
-	SubDomainParamName = `_sd`
+	SubDomainParamName = `sd`
+	SetCookieSubDomainParamName = `setcsd`
 	SubDomainCookieName = `Subdomain`
+	SubDomainUserAgentName = SubDomainCookieName
 	SetCooikeResponse  = `HTTP/1.0 200 OK
 Content-Length: %d
 Set-Cookie: %s=%s;
@@ -97,27 +99,20 @@ func httpHandler(c conn.Conn, proto string) {
 		_, port, _ := net.SplitHostPort(c.LocalAddr().String())
 		hostname = fmt.Sprintf("%s:%s", hostname, port)
 	}
-	subdomain := vhostConn.Request.URL.Query().Get(SubDomainParamName) //url param
+	paramSubdomain := vhostConn.Request.URL.Query().Get(SubDomainParamName) //url param
 
-	if subdomain == "" { //user-agent
-		reg := regexp.MustCompile("Subdomain/(\\w+)")
+	if paramSubdomain == "" { //user-agent
+		reg := regexp.MustCompile(fmt.Sprintf("%s/(\\w+)",SubDomainUserAgentName))
 		matches := reg.FindStringSubmatch(vhostConn.Request.UserAgent())
 		if len(matches) > 0 {
-			subdomain = matches[1]
+			paramSubdomain = matches[1]
 		}
 	}
-
+	_, setCookieSubdomain := vhostConn.Request.URL.Query()[SetCookieSubDomainParamName]
 	subdomainCookie, err := vhostConn.Request.Cookie(SubDomainCookieName)
 	cookieSubdomain := ""
 	if err == nil {
 		cookieSubdomain = subdomainCookie.Value
-		if cookieSubdomain != "" {
-			if subdomain == "" {
-				subdomain = cookieSubdomain
-			} else if cookieSubdomain != subdomain {
-				cookieSubdomain = ""
-			}
-		}
 	}
 
 	// done reading mux data, free up the request memory
@@ -128,8 +123,11 @@ func httpHandler(c conn.Conn, proto string) {
 
 	// multiplex to find the right backend host
 	c.Debug("Found hostname %s in request", host)
-
-	if cookieSubdomain != "" {
+	
+	
+	if paramSubdomain != "" {
+		hostname = fmt.Sprintf("%s.%s", paramSubdomain, hostname)
+	} else if cookieSubdomain != "" {
 		hostname = fmt.Sprintf("%s.%s", cookieSubdomain, hostname)
 	}
 
@@ -137,12 +135,12 @@ func httpHandler(c conn.Conn, proto string) {
 
 	tunnel := tunnelRegistry.Get(tunnelKey)
 	if tunnel == nil {
-		if subdomain != "" && cookieSubdomain == "" {
-			c.Info("Set %s to Cookie for hostname %s", subdomain, tunnelKey)
-			c.Write([]byte(fmt.Sprintf(SetCooikeResponse,len(proto)+len(hostname)+len(subdomain)+48, SubDomainCookieName, subdomain, proto, hostname, subdomain)))
+		if setCookieSubdomain && paramSubdomain != "" {
+			c.Info("Set %s to Cookie for hostname %s", paramSubdomain, tunnelKey)
+			c.Write([]byte(fmt.Sprintf(SetCooikeResponse,len(proto)+len(hostname)+len(paramSubdomain)+48, SubDomainCookieName, paramSubdomain, proto, hostname, paramSubdomain)))
 		} else {
 			c.Info("No tunnel found for hostname %s", tunnelKey)
-			c.Write([]byte(fmt.Sprintf(NotFound, len(host)+18, host)))
+			c.Write([]byte(fmt.Sprintf(NotFound, len(hostname)+18, hostname)))
 		}
 		return
 	}
